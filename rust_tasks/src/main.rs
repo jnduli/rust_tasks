@@ -5,7 +5,13 @@ use clap::Subcommand;
 use rust_tasks::config;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(version, about, verbatim_doc_comment)]
+/// Rust Tasks
+/// Create a configuration file in $HOME/.config/rust_tasks/config.toml
+///
+/// [backend]
+/// strain = "api" or "db"
+/// uri = "http://username:passwd@localhost:8080" or "sqlite://abc.ljasdfkj"
 struct Args {
     #[arg(short, long, value_name = "FILE")]
     config: Option<String>,

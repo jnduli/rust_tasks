@@ -1,7 +1,0 @@
-[backend]
-strain = "api" or "db"
-uri = "http://username:passwd@localhost:8080" or "sqlite://abc.ljasdfkj"
-
-
-[server]
-db_uri = "sqlite://abc.1jasdfasf"
