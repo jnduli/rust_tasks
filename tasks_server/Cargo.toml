@@ -1,0 +1,20 @@
+[package]
+name = "tasks_server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+anyhow = "1.0.75"
+rust_tasks = { path = "../rust_tasks" }
+tokio = { version = "1.37.0", features = ["full"] }
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.116"
+axum = { version = "0.7.5", features = ["tracing"] }
+xdg = "2.5.2"
+toml = "0.8.12"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+tower-http = { version = "0.5.2", features = ["timeout", "trace"] }

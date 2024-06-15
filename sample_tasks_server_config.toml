@@ -1,0 +1,2 @@
+db_uri = "file:///tmp/tasklite.db"
+bind_address = "0.0.0.0:3000"
