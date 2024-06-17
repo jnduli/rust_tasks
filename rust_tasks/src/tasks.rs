@@ -8,7 +8,6 @@ use anyhow::{bail, Result};
 use chrono::{
     DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
 };
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tempfile::Builder;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
@@ -105,7 +104,7 @@ impl Task {
                 let mut new_task = self.clone();
                 new_task.ulid = default_task.ulid;
                 new_task.due_utc = Some(new_due_date);
-                new_task.ready_utc = new_ready_date.clone();
+                new_task.ready_utc.clone_from(new_ready_date);
                 Some(new_task)
             }
         }
@@ -172,10 +171,6 @@ impl Task {
         *self = task;
         Ok(())
     }
-
-    fn delete_from_db(&self, storage: &impl TaskStorage) -> Result<()> {
-        storage.delete(self)
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -237,10 +232,6 @@ pub fn quick_clean(storage: &dyn TaskStorage, date: &str) -> Result<()> {
     Ok(())
 }
 
-fn get_tasks_with_ulid(storage: &impl TaskStorage, ulid_suffix: &str) -> Result<Vec<Task>> {
-    storage.search_using_ulid(ulid_suffix)
-}
-
 pub fn do_task(task_storage: &dyn TaskStorage, ulid_suffix: &str) -> Result<()> {
     let mut tasks = task_storage.search_using_ulid(ulid_suffix)?;
     if tasks.len() > 1 {
@@ -273,15 +264,6 @@ pub fn list_next_tasks(storage: &dyn TaskStorage, number: usize) -> Result<()> {
     Ok(())
 }
 
-fn count_tasks(connection: &Connection, where_clause: &str) -> u8 {
-    // TODO: fix tasks to use tasks_view since it has tags or rather use a join instead if possible
-    let query = format!("SELECT count(*) FROM tasks_view where {where_clause}");
-    let count: u8 = connection
-        .query_row(query.as_str(), [], |row| row.get(0))
-        .expect("Failed to run query");
-    count
-}
-
 fn minutes_per_task(time_start: &DateTime<Utc>, time_end: &DateTime<Utc>, no_tasks: usize) -> f32 {
     let duration = time_end.timestamp() - time_start.timestamp();
     (duration as f32) / (60.0 * (no_tasks as f32))
@@ -304,7 +286,8 @@ pub fn get_summary_stats(storage: &dyn TaskStorage) -> Result<()> {
     let ratio_done = (done_tasks as f32) / (total_due as f32);
     let now = Utc::now();
     let end_time = Utc
-        .with_ymd_and_hms(now.year(), now.month(), now.day(), 17, 0, 0)?;
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), 17, 0, 0)
+        .unwrap();
     let open_meeting_tasks = day_summary.remaining_meetings;
     let approx_meeting_minutes = Duration::minutes(open_meeting_tasks as i64 * 30);
     let start_date_with_minutes = now.add(approx_meeting_minutes);
@@ -415,7 +398,8 @@ mod tests {
         };
         let task = Task::default();
         task.save_to_db(&task_storage).unwrap();
-        let saved_tasks = get_tasks_with_ulid(&task_storage, &task.ulid).unwrap();
+
+        let saved_tasks = task_storage.search_using_ulid(&task.ulid).unwrap();
         assert_eq!(saved_tasks.len(), 1);
         let expected_task = &saved_tasks[0];
         let saved_task = Task {
@@ -435,7 +419,7 @@ mod tests {
 
         let task_storage = sqlite_storage::SQLiteStorage { connection: conn };
         task.save_to_db(&task_storage).unwrap();
-        let saved_tasks = get_tasks_with_ulid(&task_storage, &task.ulid).unwrap();
+        let saved_tasks = task_storage.search_using_ulid(&task.ulid).unwrap();
         assert_eq!(saved_tasks.len(), 1);
         let expected_task = &saved_tasks[0];
         let saved_task = Task {
@@ -450,11 +434,11 @@ mod tests {
         let task_storage = sqlite_storage::SQLiteStorage {
             connection: get_connection(),
         };
-        let mut tasks = get_tasks_with_ulid(&task_storage, "8vag").unwrap();
+        let mut tasks = task_storage.search_using_ulid("8vag").unwrap();
         let task = &mut tasks[0];
         assert_eq!(task.closed_utc, None);
         task.do_task(&task_storage).unwrap();
-        let task = &mut get_tasks_with_ulid(&task_storage, "8vag").unwrap()[0];
+        let task = &task_storage.search_using_ulid("8vag").unwrap()[0];
         assert_ne!(task.closed_utc, None);
     }
 

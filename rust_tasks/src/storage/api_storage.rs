@@ -1,5 +1,5 @@
 use anyhow::bail;
-use ureq::{json, Error};
+use ureq::Error;
 
 use crate::tasks::DaySummary;
 

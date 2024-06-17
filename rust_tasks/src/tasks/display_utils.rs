@@ -5,7 +5,7 @@ use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 
 use super::Task;
 
-pub fn show_tasks_table(tasks: &Vec<Task>) -> Result<()> {
+pub fn show_tasks_table(tasks: &[Task]) -> Result<()> {
     let mut stdout = StandardStream::stdout(termcolor::ColorChoice::Always);
     let ulid_length = ulid_output_length(tasks.len());
     stdout.set_color(ColorSpec::new().set_underline(true))?;
