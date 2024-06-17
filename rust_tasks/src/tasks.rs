@@ -304,8 +304,7 @@ pub fn get_summary_stats(storage: &dyn TaskStorage) -> Result<()> {
     let ratio_done = (done_tasks as f32) / (total_due as f32);
     let now = Utc::now();
     let end_time = Utc
-        .with_ymd_and_hms(now.year(), now.month(), now.day(), 17, 0, 0)
-        .unwrap();
+        .with_ymd_and_hms(now.year(), now.month(), now.day(), 17, 0, 0)?;
     let open_meeting_tasks = day_summary.remaining_meetings;
     let approx_meeting_minutes = Duration::minutes(open_meeting_tasks as i64 * 30);
     let start_date_with_minutes = now.add(approx_meeting_minutes);
