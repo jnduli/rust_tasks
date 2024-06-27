@@ -131,9 +131,6 @@ async fn shutdown_signal() {
             .await;
     };
 
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
@@ -143,7 +140,7 @@ async fn shutdown_signal() {
 // which calls one of these handlers
 async fn root() -> String {
     // Serve html for wesbite that can handle getting and marking a task as done
-    "Hello World".to_string()
+    "TODO: intent to add some web html end point here".to_string()
 }
 
 async fn get_health() -> Result<Json<serde_json::Value>, AppError> {
@@ -261,8 +258,6 @@ mod tests {
 
     use http_body_util::BodyExt; // for `collect`
     use tower::util::ServiceExt;
-
-    // use tower::{Service, ServiceExt}; // for `call`, `oneshot`, and `ready`
 
     fn test_app() -> Router {
         let sqlite_storage = SQLiteStorage::new(":memory:");

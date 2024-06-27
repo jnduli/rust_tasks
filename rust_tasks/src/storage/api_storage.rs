@@ -12,7 +12,7 @@ pub struct APIStorage {
 impl TaskStorage for APIStorage {
     fn save(&self, task: &crate::tasks::Task) -> anyhow::Result<()> {
         let end_point = format!("{}/tasks/", self.uri);
-        let _resp: String = ureq::post(&end_point)
+        ureq::post(&end_point)
             .send_json(task)
             .map_err(api_error_report)?
             .into_string()?;
@@ -21,9 +21,9 @@ impl TaskStorage for APIStorage {
 
     fn delete(&self, task: &crate::tasks::Task) -> anyhow::Result<()> {
         let end_point = format!("{}/tasks/{}", self.uri, task.ulid);
-        let _resp: String = ureq::delete(&end_point)
+        ureq::delete(&end_point)
             .call()
-            .map_err(|err| api_error_report(err))?
+            .map_err(api_error_report)?
             .into_string()?;
         Ok(())
     }
@@ -48,9 +48,7 @@ impl TaskStorage for APIStorage {
 
     fn next_tasks(&self, count: usize) -> anyhow::Result<Vec<crate::tasks::Task>> {
         let end_point = format!("{}/tasks/next/{}", self.uri, count);
-        let response = ureq::get(&end_point)
-            .call()
-            .map_err(|err| api_error_report(err))?;
+        let response = ureq::get(&end_point).call().map_err(api_error_report)?;
         let tasks: Vec<crate::tasks::Task> = response.into_json()?;
         Ok(tasks)
     }
