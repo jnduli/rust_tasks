@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::anyhow;
 use ureq::Error;
 
 use crate::tasks::DaySummary;
@@ -12,51 +12,53 @@ pub struct APIStorage {
 impl TaskStorage for APIStorage {
     fn save(&self, task: &crate::tasks::Task) -> anyhow::Result<()> {
         let end_point = format!("{}/tasks/", self.uri);
-        let _resp: String = ureq::post(&end_point).send_json(task)?.into_string()?;
+        ureq::post(&end_point)
+            .send_json(task)
+            .map_err(api_error_report)?
+            .into_string()?;
         Ok(())
     }
 
     fn delete(&self, task: &crate::tasks::Task) -> anyhow::Result<()> {
         let end_point = format!("{}/tasks/{}", self.uri, task.ulid);
-        let _resp: String = ureq::delete(&end_point).call()?.into_string()?;
+        ureq::delete(&end_point)
+            .call()
+            .map_err(api_error_report)?
+            .into_string()?;
         Ok(())
     }
 
     fn update(&self, task: &crate::tasks::Task) -> anyhow::Result<()> {
         let end_point = format!("{}/tasks/{}", self.uri, task.ulid);
-        let resp = ureq::patch(&end_point).send_json(task);
-        match resp {
-            Ok(_) => Ok(()),
-            Err(Error::Status(code, response)) => {
-                bail!(
-                    "Failed with status code: {}, and response: {:#?}",
-                    code,
-                    response.into_string()
-                )
-            }
-            Err(err) => Err(err.into()),
-        }
+        ureq::patch(&end_point)
+            .send_json(task)
+            .map_err(api_error_report)?;
+        Ok(())
     }
 
     fn search_using_ulid(&self, ulid: &str) -> anyhow::Result<Vec<crate::tasks::Task>> {
         let end_point = format!("{}/tasks/search", self.uri);
         let res = ureq::get(&end_point)
             .query("ulid", ulid)
-            .call()?
+            .call()
+            .map_err(api_error_report)?
             .into_json()?;
         Ok(res)
     }
 
     fn next_tasks(&self, count: usize) -> anyhow::Result<Vec<crate::tasks::Task>> {
         let end_point = format!("{}/tasks/next/{}", self.uri, count);
-        let response = ureq::get(&end_point).call()?;
+        let response = ureq::get(&end_point).call().map_err(api_error_report)?;
         let tasks: Vec<crate::tasks::Task> = response.into_json()?;
         Ok(tasks)
     }
 
     fn summarize_day(&self) -> anyhow::Result<crate::tasks::DaySummary> {
         let end_point = format!("{}/tasks/summarize_day/", self.uri);
-        let res: DaySummary = ureq::get(&end_point).call()?.into_json()?;
+        let res: DaySummary = ureq::get(&end_point)
+            .call()
+            .map_err(api_error_report)?
+            .into_json()?;
         Ok(res)
     }
 
@@ -64,7 +66,8 @@ impl TaskStorage for APIStorage {
         let end_point = format!("{}/tasks/unsafe_query/", self.uri);
         let res = ureq::get(&end_point)
             .query("clause", clause)
-            .call()?
+            .call()
+            .map_err(api_error_report)?
             .into_json()?;
         Ok(res)
     }
@@ -73,5 +76,18 @@ impl TaskStorage for APIStorage {
 impl APIStorage {
     pub fn new(uri: String) -> Self {
         Self { uri }
+    }
+}
+
+fn api_error_report(err: ureq::Error) -> anyhow::Error {
+    match err {
+        Error::Status(code, response) => {
+            anyhow!(
+                "Failed with status code: {}, and response:\n {:#?}",
+                code,
+                response.into_string()
+            )
+        }
+        Error::Transport(t) => anyhow!(t.to_string()),
     }
 }

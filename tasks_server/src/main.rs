@@ -71,20 +71,8 @@ where
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
-    // FIXME! Use configs to get the db location
-    let tasks_config = config::Config::load(None)?;
-    let task_storage = tasks_config.db_connection()?;
-
-    let shared_state = Arc::new(Mutex::new(AppState {
-        sql_storage: task_storage,
-    }));
-
-    let app = Router::new()
+fn app(shared_state: Arc<Mutex<AppState>>) -> Router {
+    Router::new()
         .route("/", get(root))
         .route("/health", get(get_health))
         .route("/tasks/", get(get_tasks).post(save_task))
@@ -99,7 +87,22 @@ async fn main() -> Result<()> {
             // requests don't hang forever.
             TimeoutLayer::new(Duration::from_secs(10)),
         ))
-        .with_state(shared_state);
+        .with_state(shared_state)
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+    // FIXME! Use configs to get the db location
+    let tasks_config = config::Config::load(None)?;
+    let task_storage = tasks_config.db_connection()?;
+
+    let shared_state = Arc::new(Mutex::new(AppState {
+        sql_storage: task_storage,
+    }));
+    let app = app(shared_state);
 
     let listener = tokio::net::TcpListener::bind(&tasks_config.bind_address)
         .await
@@ -128,9 +131,6 @@ async fn shutdown_signal() {
             .await;
     };
 
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
@@ -140,7 +140,7 @@ async fn shutdown_signal() {
 // which calls one of these handlers
 async fn root() -> String {
     // Serve html for wesbite that can handle getting and marking a task as done
-    "Hello World".to_string()
+    "TODO: intent to add some web html end point here".to_string()
 }
 
 async fn get_health() -> Result<Json<serde_json::Value>, AppError> {
@@ -248,4 +248,52 @@ async fn get_day_summary(
     let sql_storage = &task_storage.sql_storage;
     let day_summary = sql_storage.summarize_day()?;
     Ok(Json(json!(day_summary)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, extract::Request, http, Router};
+    use sqlite_storage::SQLiteStorage;
+
+    use http_body_util::BodyExt; // for `collect`
+    use tower::util::ServiceExt;
+
+    fn test_app() -> Router {
+        let sqlite_storage = SQLiteStorage::new(":memory:");
+        let insert_query = r#"INSERT INTO tasks (ulid, body, due_utc, closed_utc, modified_utc) VALUES
+            ('8vag','follow up wit','2023-08-23 09:01:34',NULL,NULL),
+            ('7nx0','deep dive int','2023-08-06 18:46:41',NULL,NULL);
+        "#;
+        let tags_query = r#"INSERT INTO task_to_tag (ulid, task_ulid, tag) VALUES
+            ('abcd', '8vag', 'work'),
+            ('7nx0', '8vag', 'meeting');
+        "#;
+        sqlite_storage.connection.execute(insert_query, ()).unwrap();
+        sqlite_storage.connection.execute(tags_query, ()).unwrap();
+        let shared_state = Arc::new(Mutex::new(AppState {
+            sql_storage: sqlite_storage,
+        }));
+        app(shared_state)
+    }
+
+    #[tokio::test]
+    async fn test_get_next_tasks() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::GET)
+                    .uri("/tasks/next/1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        let expected = json!([{"body":"deep dive int","closed_utc":null,"due_utc":"2023-08-06 18:46:41","metadata":null,"modified_utc":null,"priority_adjustment":null,"ready_utc":null,"recurrence_duration":null,"tags":null,"ulid":"7nx0","user":null}]);
+        assert_eq!(body, expected);
+    }
 }
