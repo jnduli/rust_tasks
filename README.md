@@ -68,3 +68,27 @@ In guix, to install `rust_tasks`:
 export CC=$(which gcc)
 guix install sqlite
 ```
+
+## TODO
+
+- [ ] add support for `rt health` to check if storage is healthy
+- [ ] add configurable `rt summary` docs
+- [ ] explore using crdts as a storage type
+
+
+## RT summary spec
+
+- set start and end times per day
+- set tags and approximate times for each
+- set goal times I want
+
+e.g.
+
+[[summary]]
+start: 08:00
+end: 17:00
+tags.meeting: 30m
+tags.work: 60m
+goal: 30m
+
+
