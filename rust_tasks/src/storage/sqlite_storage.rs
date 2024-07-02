@@ -181,7 +181,7 @@ impl TaskStorage for SQLiteStorage {
         Ok(DaySummaryResult {
             total_tasks,
             done_tasks,
-            open_tags_count,
+            open_tags_count: Some(open_tags_count),
         })
     }
 

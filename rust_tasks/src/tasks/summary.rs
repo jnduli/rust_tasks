@@ -88,7 +88,12 @@ impl SummaryConfig {
         let now = Utc::now().time();
         let mut end_time = self.end;
         let mut non_tagged_counts = total_due - done_tasks;
-        for (tag, cnt) in summary_result.open_tags_count.iter() {
+        for (tag, cnt) in summary_result
+            .open_tags_count
+            .clone()
+            .unwrap_or(HashMap::new())
+            .iter()
+        {
             let time_for_tag = self.tags.get(tag).unwrap();
             end_time -= time_for_tag.checked_mul(*cnt as i32).unwrap();
             non_tagged_counts -= cnt;
@@ -101,7 +106,12 @@ impl SummaryConfig {
         println!("Total: {}", total_due);
         println!("NotDone: {}", (total_due - done_tasks));
         println!("Done: {}", done_tasks);
-        for (tag, cnt) in summary_result.open_tags_count.iter() {
+        for (tag, cnt) in summary_result
+            .open_tags_count
+            .clone()
+            .unwrap_or(HashMap::new())
+            .iter()
+        {
             if cnt < &1 {
                 continue;
             }

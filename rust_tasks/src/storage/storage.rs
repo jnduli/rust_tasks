@@ -10,7 +10,7 @@ use crate::tasks::Task;
 pub struct DaySummaryResult {
     pub total_tasks: usize,
     pub done_tasks: usize,
-    pub open_tags_count: HashMap<String, usize>,
+    pub open_tags_count: Option<HashMap<String, usize>>,
 }
 
 pub trait TaskStorage {
