@@ -243,10 +243,16 @@ async fn get_unsafe_query_tasks(
 
 async fn get_day_summary(
     State(state): State<Arc<Mutex<AppState>>>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, AppError> {
     let task_storage = state.lock().unwrap();
     let sql_storage = &task_storage.sql_storage;
-    let summary_config = SummaryConfig::default();
+    let summary_config = match params.get("summary_config") {
+        None => SummaryConfig::default(), 
+        Some(summary_config) => {
+            serde_json::from_str(summary_config)?
+        }
+    };
     let day_summary = sql_storage.summarize_day(&summary_config)?;
     Ok(Json(json!(day_summary)))
 }
