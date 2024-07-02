@@ -2,7 +2,7 @@ use std::error::Error;
 
 use clap::Parser;
 use clap::Subcommand;
-use rust_tasks::config;
+use rust_tasks::config::Config;
 
 #[derive(Parser, Debug)]
 #[command(version, about, verbatim_doc_comment)]
@@ -56,8 +56,8 @@ enum Commands {
 fn main() -> anyhow::Result<(), Box<dyn Error>> {
     color_eyre::install()?;
     let args = Args::parse();
-    let task_config = config::load_config(args.config)?;
-    let task_storage_box = config::get_storage_engine(&task_config)?;
+    let task_config = Config::load(args.config)?;
+    let task_storage_box = task_config.get_storage_engine()?;
     // FIXME! add support for summary to taskstorage
 
     // You can check for the existence of subcommands, and if found use their
@@ -79,9 +79,10 @@ fn main() -> anyhow::Result<(), Box<dyn Error>> {
             rust_tasks::tasks::edit_utils::delete_task(task_storage_box.as_ref(), task_ulid)
                 .unwrap()
         }),
-        Some(Commands::Summary {}) => {
-            rust_tasks::tasks::get_summary_stats(task_storage_box.as_ref())?
-        }
+        Some(Commands::Summary {}) => rust_tasks::tasks::get_summary_stats(
+            task_storage_box.as_ref(),
+            &task_config.get_summary_config(),
+        )?,
         Some(Commands::Add { task_params }) => {
             let task_params_string = task_params.join(" ");
             rust_tasks::tasks::add_utils::add_task(task_storage_box.as_ref(), &task_params_string)?
