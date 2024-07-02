@@ -1,9 +1,9 @@
 use anyhow::anyhow;
 use ureq::Error;
 
-use crate::tasks::DaySummary;
+use crate::tasks::summary::SummaryConfig;
 
-use super::storage::TaskStorage;
+use super::storage::{DaySummaryResult, TaskStorage};
 
 pub struct APIStorage {
     pub uri: String,
@@ -53,9 +53,9 @@ impl TaskStorage for APIStorage {
         Ok(tasks)
     }
 
-    fn summarize_day(&self) -> anyhow::Result<crate::tasks::DaySummary> {
+    fn summarize_day(&self, summary: &SummaryConfig) -> anyhow::Result<DaySummaryResult> {
         let end_point = format!("{}/tasks/summarize_day/", self.uri);
-        let res: DaySummary = ureq::get(&end_point)
+        let res: DaySummaryResult = ureq::get(&end_point)
             .call()
             .map_err(api_error_report)?
             .into_json()?;

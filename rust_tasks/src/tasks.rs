@@ -9,6 +9,7 @@ use chrono::{
     DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
 };
 use serde::{Deserialize, Serialize};
+use summary::SummaryConfig;
 use tempfile::Builder;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use ulid::Ulid;
@@ -20,6 +21,7 @@ use crate::storage::storage::TaskStorage;
 pub mod add_utils;
 pub mod display_utils;
 pub mod edit_utils;
+pub mod summary;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
@@ -173,13 +175,6 @@ impl Task {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct DaySummary {
-    pub total_tasks: usize,
-    pub done_tasks: usize,
-    pub remaining_meetings: usize,
-}
-
 pub fn experiment() -> Result<()> {
     println!("No experiment running");
     todo!()
@@ -279,34 +274,9 @@ fn write_line(line: String, color: Color) {
 }
 
 pub fn get_summary_stats(storage: &dyn TaskStorage) -> Result<()> {
-    let day_summary = storage.summarize_day()?;
-    let total_due = day_summary.total_tasks;
-    let done_tasks = day_summary.done_tasks;
-
-    let ratio_done = (done_tasks as f32) / (total_due as f32);
-    let now = Utc::now();
-    let end_time = Utc
-        .with_ymd_and_hms(now.year(), now.month(), now.day(), 17, 0, 0)
-        .unwrap();
-    let open_meeting_tasks = day_summary.remaining_meetings;
-    let approx_meeting_minutes = Duration::minutes(open_meeting_tasks as i64 * 30);
-    let start_date_with_minutes = now.add(approx_meeting_minutes);
-    let actual_minutes = minutes_per_task(
-        &start_date_with_minutes,
-        &end_time,
-        total_due - done_tasks - open_meeting_tasks,
-    );
-
-    println!("Total: {}", total_due);
-    println!("NotDone: {}", (total_due - done_tasks));
-    println!("Done: {}", done_tasks);
-    println!("Meetings left (~30 mins): {}", open_meeting_tasks);
-    println!("Ratio done: {:.2}", ratio_done);
-    let mut color = Color::Green;
-    if actual_minutes < 10.0 {
-        color = Color::Red;
-    }
-    write_line(format!("Minutes per task: {:.2}", actual_minutes), color);
+    let default_summary_config = SummaryConfig::default();
+    let summary_result = storage.summarize_day(&default_summary_config)?;
+    default_summary_config.get_summary_stats(summary_result)?;
     Ok(())
 }
 
