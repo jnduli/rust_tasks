@@ -5,13 +5,11 @@ use std::ops::Add;
 use std::process::Command;
 
 use anyhow::{bail, Result};
-use chrono::{
-    DateTime, Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc, Weekday,
-};
+use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 use summary::SummaryConfig;
 use tempfile::Builder;
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 use ulid::Ulid;
 
 use self::display_utils::show_tasks_table;
@@ -259,24 +257,9 @@ pub fn list_next_tasks(storage: &dyn TaskStorage, number: usize) -> Result<()> {
     Ok(())
 }
 
-fn minutes_per_task(time_start: &DateTime<Utc>, time_end: &DateTime<Utc>, no_tasks: usize) -> f32 {
-    let duration = time_end.timestamp() - time_start.timestamp();
-    (duration as f32) / (60.0 * (no_tasks as f32))
-}
-
-fn write_line(line: String, color: Color) {
-    let mut stdout = StandardStream::stdout(ColorChoice::Always);
-    stdout
-        .set_color(ColorSpec::new().set_fg(Some(color)))
-        .unwrap();
-    writeln!(&mut stdout, "{}", line).unwrap();
-    stdout.reset().unwrap();
-}
-
-pub fn get_summary_stats(storage: &dyn TaskStorage) -> Result<()> {
-    let default_summary_config = SummaryConfig::default();
-    let summary_result = storage.summarize_day(&default_summary_config)?;
-    default_summary_config.get_summary_stats(summary_result)?;
+pub fn get_summary_stats(storage: &dyn TaskStorage, summary_config: &SummaryConfig) -> Result<()> {
+    let summary_result = storage.summarize_day(summary_config)?;
+    summary_config.get_summary_stats(summary_result)?;
     Ok(())
 }
 
@@ -285,7 +268,6 @@ mod tests {
     use crate::storage::sqlite_storage;
 
     use super::*;
-    use chrono::{TimeZone, Utc};
     use rusqlite::Connection;
 
     fn get_connection() -> Connection {
@@ -312,15 +294,6 @@ mod tests {
         sqlite_storage.connection.execute(insert_query, ()).unwrap();
         sqlite_storage.connection.execute(tags_query, ()).unwrap();
         sqlite_storage.connection
-    }
-
-    #[test]
-    fn minutes_per_task_is_correct() {
-        let start_date = Utc.with_ymd_and_hms(2023, 11, 4, 10, 0, 0).unwrap();
-        let end_date = Utc.with_ymd_and_hms(2023, 11, 4, 12, 0, 0).unwrap();
-        let result = minutes_per_task(&start_date, &end_date, 12);
-        let expected = 10.00;
-        assert_eq!(result, expected)
     }
 
     #[test]
@@ -431,7 +404,6 @@ mod tests {
         let task_storage = sqlite_storage::SQLiteStorage {
             connection: get_connection(),
         };
-        let conn = &task_storage.connection;
         let sql_clause = "WHERE ulid = '8vag'";
         let tasks = task_storage.get_tasks(Some(sql_clause)).unwrap();
         let mut task = tasks[0].to_owned();
@@ -446,7 +418,6 @@ mod tests {
         let task_storage = sqlite_storage::SQLiteStorage {
             connection: get_connection(),
         };
-        let conn = &task_storage.connection;
         let sql_clause = "WHERE ulid = '8vag'";
         let tasks = task_storage.get_tasks(Some(sql_clause)).unwrap();
         let mut task = tasks[0].to_owned();

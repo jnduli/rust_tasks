@@ -55,7 +55,9 @@ impl TaskStorage for APIStorage {
 
     fn summarize_day(&self, summary: &SummaryConfig) -> anyhow::Result<DaySummaryResult> {
         let end_point = format!("{}/tasks/summarize_day/", self.uri);
+        let json_summary_config = serde_json::to_string(&summary)?;
         let res: DaySummaryResult = ureq::get(&end_point)
+            .query("summary_config", &json_summary_config)
             .call()
             .map_err(api_error_report)?
             .into_json()?;

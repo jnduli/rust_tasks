@@ -1,18 +1,35 @@
 use std::collections::HashMap;
 
 use chrono::{Duration, NaiveTime, Utc};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::storage::storage::{DaySummaryResult, TaskStorage};
+use crate::storage::storage::DaySummaryResult;
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct SummaryConfig {
     start: NaiveTime,
     end: NaiveTime,
-    #[serde(deserialize_with = "tags_deserialize")]
+    #[serde(
+        serialize_with = "tags_serialize",
+        deserialize_with = "tags_deserialize"
+    )]
     tags: HashMap<String, Duration>,
-    #[serde(deserialize_with = "duration_deserialize")]
-    goal: Duration,
+    #[serde(
+        serialize_with = "duration_serialize",
+        deserialize_with = "duration_deserialize"
+    )]
+    pub goal: Duration,
+}
+
+fn tags_serialize<S>(tags: &HashMap<String, Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    #[derive(Serialize)]
+    struct Wrapper<'a>(#[serde(serialize_with = "duration_serialize")] &'a Duration);
+
+    let map = tags.iter().map(|(k, v)| (k, Wrapper(v)));
+    serializer.collect_map(map)
 }
 
 fn tags_deserialize<'de, D>(deserializer: D) -> Result<HashMap<String, Duration>, D::Error>
@@ -31,11 +48,17 @@ where
     D: Deserializer<'de>,
 {
     let str_sequence = String::deserialize(deserializer)?;
-    println!("{}", str_sequence);
     let iso_duration = str_sequence.parse::<iso8601_duration::Duration>().unwrap();
-    println!("{}", iso_duration);
     let chrono_duration = iso_duration.to_chrono().unwrap();
     Ok(chrono_duration)
+}
+
+fn duration_serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let duration_string = duration.to_string();
+    serializer.serialize_str(&duration_string)
 }
 
 impl Default for SummaryConfig {
@@ -64,7 +87,7 @@ impl SummaryConfig {
         let ratio_done = (done_tasks as f32) / (total_due as f32);
         let now = Utc::now().time();
         let mut end_time = self.end;
-        let mut non_tagged_counts = (total_due - done_tasks);
+        let mut non_tagged_counts = total_due - done_tasks;
         for (tag, cnt) in summary_result.open_tags_count.iter() {
             let time_for_tag = self.tags.get(tag).unwrap();
             end_time -= time_for_tag.checked_mul(*cnt as i32).unwrap();
@@ -133,5 +156,20 @@ mod tests {
             goal: Duration::minutes(30),
         };
         assert_eq!(summary, expected);
+    }
+
+    #[test]
+    fn serialized_correctly() {
+        let summary_config = SummaryConfig::default();
+        let serialized = toml::to_string(&summary_config).unwrap();
+        let expected = r#"start = "05:00:00"
+end = "14:00:00"
+goal = "PT1800S"
+
+[tags]
+work = "PT1800S"
+meeting = "PT1800S"
+"#;
+        assert_eq!(serialized, expected.to_string());
     }
 }
