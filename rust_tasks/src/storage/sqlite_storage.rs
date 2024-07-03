@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use chrono::Local;
 use rusqlite::{params, Connection};
 use ulid::Ulid;
 
-use crate::tasks::{DaySummary, Task};
+use crate::tasks::{summary::SummaryConfig, Task};
 
-use super::storage::TaskStorage;
+use super::storage::{DaySummaryResult, TaskStorage};
 
 const CREATE_TASKS_TABLE_QUERY: &str = "CREATE TABLE IF NOT EXISTS tasks (
   ulid text not null primary key,
@@ -164,17 +166,22 @@ impl TaskStorage for SQLiteStorage {
         self.get_tasks(Some(&extra_clause))
     }
 
-    fn summarize_day(&self) -> anyhow::Result<DaySummary> {
+    fn summarize_day(&self, summary: &SummaryConfig) -> anyhow::Result<DaySummaryResult> {
         let total_tasks = self.count_tasks("(DATE(due_utc) <= DATE('now') AND DATE(closed_utc) IS NULL) OR DATE(closed_utc) = DATE('now')");
         let done_tasks = self.count_tasks("DATE(closed_utc) = DATE('now')");
-        let remaining_meetings = self.count_tasks(
-            "DATE(due_utc) = DATE('now') AND closed_utc IS NUll AND tags LIKE '%meet%'",
-        );
-
-        Ok(DaySummary {
+        let mut open_tags_count = HashMap::new();
+        for tag in summary.relevant_tags() {
+            let count_query = format!(
+                "DATE(due_utc) = DATE('now') AND closed_utc IS NUll AND tags LIKE '%{}%'",
+                tag
+            );
+            let local_count = self.count_tasks(&count_query);
+            open_tags_count.insert(tag, local_count);
+        }
+        Ok(DaySummaryResult {
             total_tasks,
             done_tasks,
-            remaining_meetings,
+            open_tags_count: Some(open_tags_count),
         })
     }
 
