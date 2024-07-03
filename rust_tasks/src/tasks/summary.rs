@@ -98,9 +98,12 @@ impl SummaryConfig {
             end_time -= time_for_tag.checked_mul(*cnt as i32).unwrap();
             non_tagged_counts -= cnt;
         }
-        let minutes_per_task = {
+        let (minutes_per_task, overshoot_tasks_cnt) = {
             let delta = end_time - now;
-            delta.num_minutes() / non_tagged_counts as i64
+            let minutes_per_task = delta.num_minutes() / non_tagged_counts as i64;
+            let overshoot_tasks_cnt =
+                non_tagged_counts as i64 - (delta.num_minutes() / self.goal.num_minutes());
+            (minutes_per_task, overshoot_tasks_cnt)
         };
 
         println!("Total: {}", total_due);
@@ -132,6 +135,9 @@ impl SummaryConfig {
             "{}Minutes per task: {}\x1b[0m",
             color, minutes_per_task as i32
         );
+        if overshoot_tasks_cnt > 0 {
+            println!("{}Excess tasks count:{}\x1b[0m", color, overshoot_tasks_cnt);
+        }
         Ok(())
     }
 }
