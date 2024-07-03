@@ -28,6 +28,19 @@ strain = "SQLite"
 uri = "file:///path/to/sqlite.db"
 ```
 
+Summary configuration is optional and looks like:
+
+```
+[summary]
+start = "08:00"
+end = "17:00"
+tags.meeting = "PT30M"
+tags.work = "PT45M"
+goal = "PT30M"
+```
+
+which we use to calculated some stats about how the day is going on.
+
 Run:
 
 ```
@@ -72,23 +85,4 @@ guix install sqlite
 ## TODO
 
 - [ ] add support for `rt health` to check if storage is healthy
-- [ ] add configurable `rt summary` docs
 - [ ] explore using crdts as a storage type
-
-
-## RT summary spec
-
-- set start and end times per day
-- set tags and approximate times for each
-- set goal times I want
-
-e.g.
-
-[[summary]]
-start: 08:00
-end: 17:00
-tags.meeting: 30m
-tags.work: 60m
-goal: 30m
-
-
