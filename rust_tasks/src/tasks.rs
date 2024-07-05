@@ -184,31 +184,30 @@ pub fn query(storage: &dyn TaskStorage, clause: &str) -> Result<()> {
 }
 
 pub fn quick_clean(storage: &dyn TaskStorage, date: &str) -> Result<()> {
-    // ensure date is a valid object
-    let _date_to_clean = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+    let date_to_clean = NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .unwrap_or_else(|_| panic!("Expected date like `2024-10-23` but found {}", date));
+    let today_date = Utc::now().date_naive();
+
+    if date_to_clean >= today_date {
+        bail!("Expected date before today but got {}", date_to_clean);
+    }
 
     let clause =
         format!("WHERE DATE(due_utc) = '{date}' AND DATE(closed_utc) IS NULL ORDER BY due_utc ASC");
 
     let mut tasks = storage.unsafe_query(&clause)?;
-
-    let today_date = Local::now()
-        .naive_utc()
-        .and_utc()
-        .format("%Y-%m-%d")
-        .to_string();
+    let today_date_str = today_date.format("%Y-%m-%d").to_string();
 
     for task in tasks.iter_mut() {
         match &task.recurrence_duration {
             None => {
                 let new_due = task.due_utc.clone().map(|x| {
                     let date_part = x.split(' ').collect::<Vec<&str>>()[0];
-                    x.replace(date_part, today_date.as_str())
+                    x.replace(date_part, today_date_str.as_str())
                 });
                 let new_ready = task.ready_utc.clone().map(|x| {
                     let date_part = x.split(' ').collect::<Vec<&str>>()[0];
-                    x.replace(date_part, today_date.as_str())
+                    x.replace(date_part, today_date_str.as_str())
                 });
                 task.due_utc = new_due;
                 task.ready_utc = new_ready;
