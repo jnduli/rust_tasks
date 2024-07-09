@@ -5,7 +5,8 @@ use std::ops::Add;
 use std::process::Command;
 
 use anyhow::{bail, Result};
-use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, Utc, Weekday};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc, Weekday};
+use iso8601_duration::Duration;
 use serde::{Deserialize, Serialize};
 use summary::SummaryConfig;
 use tempfile::Builder;
@@ -20,16 +21,17 @@ pub mod add_utils;
 pub mod display_utils;
 pub mod edit_utils;
 pub mod summary;
+pub mod task;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
-    pub ulid: String,
+    pub ulid: Ulid,
     pub body: String,
-    pub modified_utc: Option<String>,
-    pub ready_utc: Option<String>,
-    pub due_utc: Option<String>,
-    pub closed_utc: Option<String>,
-    pub recurrence_duration: Option<String>,
+    pub modified_utc: Option<DateTime<Utc>>,
+    pub ready_utc: Option<DateTime<Utc>>,
+    pub due_utc: Option<DateTime<Utc>>,
+    pub closed_utc: Option<DateTime<Utc>>,
+    pub recurrence_duration: Option<Duration>,
     pub priority_adjustment: Option<f64>,
     pub user: Option<String>,
     pub metadata: Option<String>,
