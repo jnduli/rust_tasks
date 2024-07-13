@@ -25,7 +25,7 @@ pub mod task;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
-    pub ulid: Ulid,
+    pub ulid: String,
     pub body: String,
     pub modified_utc: Option<DateTime<Utc>>,
     pub ready_utc: Option<DateTime<Utc>>,
@@ -40,9 +40,8 @@ pub struct Task {
 
 impl Default for Task {
     fn default() -> Self {
-        let ulid = Ulid::new();
         Task {
-            ulid: ulid.to_string().to_lowercase(),
+            ulid: Ulid::new().to_string(),
             body: "".to_string(),
             // compatibility with tlite, temporary
             user: Some("rookie".to_string()),
