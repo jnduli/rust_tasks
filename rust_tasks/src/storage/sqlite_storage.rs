@@ -55,7 +55,7 @@ impl TaskStorage for SQLiteStorage {
             task.ready_utc,
             task.due_utc,
             task.closed_utc,
-            task.recurrence_duration,
+            task.recurrence_duration.map(|x| x.to_string()),
             task.priority_adjustment,
             task.user,
             task.metadata,
@@ -100,7 +100,7 @@ impl TaskStorage for SQLiteStorage {
             task.ready_utc,
             task.due_utc,
             task.closed_utc,
-            task.recurrence_duration,
+            task.recurrence_duration.map(|x| x.to_string()),
             task.priority_adjustment,
             task.user,
             task.metadata,
@@ -138,7 +138,10 @@ impl TaskStorage for SQLiteStorage {
                     ready_utc: row.get(3)?,
                     due_utc: row.get(4)?,
                     closed_utc: row.get(5)?,
-                    recurrence_duration: row.get(6)?,
+                    recurrence_duration: {
+                        let recur: Option<String> = row.get(6)?;
+                        recur.map(|x| x.parse().unwrap())
+                    },
                     // filler value to stop weird increments
                     priority_adjustment: None,
                     user: row.get(8)?,
@@ -217,11 +220,36 @@ impl SQLiteStorage {
                 Ok(Task {
                     ulid: row.get(0)?,
                     body: row.get(1)?,
+
+                    // example for parsing sqlite string to datetime utc
+                    // let due_chrono = NaiveDateTime::parse_from_str(
+                    //     self.due_utc.as_ref().unwrap().as_str(),
+                    //     "%Y-%m-%d %H:%M:%S",
+                    // )
+                    // .unwrap()
+                    // .and_utc();
                     modified_utc: row.get(2)?,
                     ready_utc: row.get(3)?,
                     due_utc: row.get(4)?,
                     closed_utc: row.get(5)?,
-                    recurrence_duration: row.get(6)?,
+                    recurrence_duration: {
+                        let recur: Option<String> = row.get(6)?;
+                        recur.map(|x| x.parse().unwrap())
+                    },
+
+                    // if x.ends_with("1JD") {
+                    //     duration_string = match due_chrono.weekday() {
+                    //         Weekday::Fri => "P3D".to_string(),
+                    //         Weekday::Sat => "P2D".to_string(),
+                    //         _ => "P1D".to_string(),
+                    //     }
+                    // let duration = duration_string
+                    //     .parse::<iso8601_duration::Duration>()
+                    //     .unwrap();
+                    // let duration = match x {
+                    //     "P1DJ" => "P1D".parse():
+                    // x.parse::<iso8601_duration::Duration>().unwrap();
+                    // }
                     // filler value to stop weird increments
                     priority_adjustment: None,
                     user: row.get(8)?,

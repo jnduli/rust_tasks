@@ -300,7 +300,7 @@ mod tests {
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let body: Value = serde_json::from_slice(&body).unwrap();
-        let expected = json!([{"body":"deep dive int","closed_utc":null,"due_utc":"2023-08-06 18:46:41","metadata":null,"modified_utc":null,"priority_adjustment":null,"ready_utc":null,"recurrence_duration":null,"tags":null,"ulid":"7nx0","user":null}]);
+        let expected = json!([{"body":"deep dive int","closed_utc":null,"due_utc":"2023-08-06T18:46:41Z","metadata":null,"modified_utc":null,"priority_adjustment":null,"ready_utc":null,"recurrence_duration":null,"tags":null,"ulid":"7nx0","user":null}]);
         assert_eq!(body, expected);
     }
 }

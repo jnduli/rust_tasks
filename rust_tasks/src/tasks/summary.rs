@@ -183,8 +183,8 @@ end = "14:00:00"
 goal = "PT1800S"
 
 [tags]
-work = "PT1800S"
 meeting = "PT1800S"
+work = "PT1800S"
 "#;
         assert_eq!(serialized, expected.to_string());
     }

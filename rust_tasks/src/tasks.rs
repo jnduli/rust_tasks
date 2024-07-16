@@ -5,7 +5,7 @@ use std::ops::Add;
 use std::process::Command;
 
 use anyhow::{bail, Result};
-use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Utc, Weekday};
+use chrono::{DateTime, NaiveDate, Utc};
 use iso8601_duration::Duration;
 use serde::{Deserialize, Serialize};
 use summary::SummaryConfig;
@@ -61,50 +61,15 @@ impl Task {
     fn next_task(&self) -> Option<Task> {
         match &self.recurrence_duration {
             None => None,
-            Some(x) => {
-                let due_chrono = NaiveDateTime::parse_from_str(
-                    self.due_utc.as_ref().unwrap().as_str(),
-                    "%Y-%m-%d %H:%M:%S",
-                )
-                .unwrap()
-                .and_utc();
-
-                // only support P1DJ for now
-                let mut duration_string = x.to_string();
-                if x.ends_with("1JD") {
-                    duration_string = match due_chrono.weekday() {
-                        Weekday::Fri => "P3D".to_string(),
-                        Weekday::Sat => "P2D".to_string(),
-                        _ => "P1D".to_string(),
-                    }
-                }
-
-                let duration = duration_string
-                    .parse::<iso8601_duration::Duration>()
-                    .unwrap();
-                // let duration = match x {
-                //     "P1DJ" => "P1D".parse():
-                // x.parse::<iso8601_duration::Duration>().unwrap();
-                // }
-                let chrono_duration = duration.to_chrono_at_datetime(due_chrono);
-
-                let new_due_date = due_chrono
-                    .add(chrono_duration)
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string();
-                // Temporary fix that assumes all my ready dates happen on the same date as due_utc
-                let new_ready_date = &self.ready_utc.as_ref().map(|x| {
-                    NaiveDateTime::parse_from_str(x, "%Y-%m-%d %H:%M:%S")
-                        .unwrap()
-                        .and_utc()
-                        .add(chrono_duration)
-                        .format("%Y-%m-%d %H:%M:%S")
-                        .to_string()
-                });
+            Some(duration) => {
+                let chrono_duration = duration.to_chrono_at_datetime(self.due_utc.unwrap());
+                let new_due_date = self.due_utc.map(|x| x.add(chrono_duration));
+                // FIXME! Temporary fix that assumes all my ready dates happen on the same date as due_utc
+                let new_ready_date = &self.ready_utc.as_ref().map(|x| x.add(chrono_duration));
                 let default_task = Task::default();
                 let mut new_task = self.clone();
                 new_task.ulid = default_task.ulid;
-                new_task.due_utc = Some(new_due_date);
+                new_task.due_utc = new_due_date;
                 new_task.ready_utc.clone_from(new_ready_date);
                 Some(new_task)
             }
@@ -132,7 +97,7 @@ impl Task {
                 if let Some(x) = self.next_task() {
                     storage.save(&x)?;
                 }
-                self.closed_utc = Some(Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
+                self.closed_utc = Some(Utc::now());
                 storage.update(self)?;
                 Ok(())
             }
@@ -187,7 +152,8 @@ pub fn query(storage: &dyn TaskStorage, clause: &str) -> Result<()> {
 pub fn quick_clean(storage: &dyn TaskStorage, date: &str) -> Result<()> {
     let date_to_clean = NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .unwrap_or_else(|_| panic!("Expected date like `2024-10-23` but found {}", date));
-    let today_date = Utc::now().date_naive();
+    let today = Utc::now();
+    let today_date = today.date_naive();
 
     if date_to_clean >= today_date {
         bail!("Expected date before today but got {}", date_to_clean);
@@ -197,18 +163,19 @@ pub fn quick_clean(storage: &dyn TaskStorage, date: &str) -> Result<()> {
         format!("WHERE DATE(due_utc) = '{date}' AND DATE(closed_utc) IS NULL ORDER BY due_utc ASC");
 
     let mut tasks = storage.unsafe_query(&clause)?;
-    let today_date_str = today_date.format("%Y-%m-%d").to_string();
 
     for task in tasks.iter_mut() {
         match &task.recurrence_duration {
             None => {
                 let new_due = task.due_utc.clone().map(|x| {
-                    let date_part = x.split(' ').collect::<Vec<&str>>()[0];
-                    x.replace(date_part, today_date_str.as_str())
+                    today.with_time(x.time()).unwrap()
+                    // let date_part = x.split(' ').collect::<Vec<&str>>()[0];
+                    // x.replace(date_part, today_date_str.as_str())
                 });
                 let new_ready = task.ready_utc.clone().map(|x| {
-                    let date_part = x.split(' ').collect::<Vec<&str>>()[0];
-                    x.replace(date_part, today_date_str.as_str())
+                    today.with_time(x.time()).unwrap()
+                    // let date_part = x.split(' ').collect::<Vec<&str>>()[0];
+                    // x.replace(date_part, today_date_str.as_str())
                 });
                 task.due_utc = new_due;
                 task.ready_utc = new_ready;
@@ -305,33 +272,18 @@ mod tests {
 
     #[test]
     fn next_task_has_correct_date() {
-        let mut task = Task::default();
-        task.due_utc = Some("2023-12-04 10:00:00".to_string());
-        task.ready_utc = Some("2023-12-04 09:00:00".to_string());
-        task.recurrence_duration = Some("P1M".to_string());
-        let expected_due_utc = Some("2024-01-04 10:00:00".to_string());
-        let expected_ready_utc = Some("2024-01-04 09:00:00".to_string());
+        let task = Task {
+            due_utc: "2023-12-04T10:00:00Z".parse().ok(),
+            ready_utc: "2023-12-04T09:00:00Z".parse().ok(),
+            recurrence_duration: "P1M".parse().ok(),
+            ..Default::default()
+        };
+        let expected_due_utc = Some("2024-01-04T10:00:00Z".parse().unwrap());
+        let expected_ready_utc = Some("2024-01-04T09:00:00Z".parse().unwrap());
         let new_task = task.next_task().unwrap();
         assert_eq!(new_task.due_utc, expected_due_utc);
         assert_eq!(new_task.ready_utc, expected_ready_utc);
-        assert_eq!(new_task.recurrence_duration, Some("P1M".to_string()));
-    }
-
-    #[test]
-    fn next_task_has_correct_date_with_job_day() {
-        let mut task = Task::default();
-        task.due_utc = Some("2024-02-09 10:00:00".to_string());
-        task.recurrence_duration = Some("P1JD".to_string());
-        let expected_recurrence_duration = Some("2024-02-12 10:00:00".to_string());
-        let new_task = task.next_task().unwrap();
-        assert_eq!(new_task.due_utc, expected_recurrence_duration);
-        assert_eq!(new_task.recurrence_duration, Some("P1JD".to_string()));
-
-        task.due_utc = Some("2024-02-10 10:00:00".to_string());
-        task.recurrence_duration = Some("P1JD".to_string());
-        let new_task = task.next_task().unwrap();
-        assert_eq!(new_task.due_utc, expected_recurrence_duration);
-        assert_eq!(new_task.recurrence_duration, Some("P1JD".to_string()));
+        assert_eq!(new_task.recurrence_duration, Some("P1M".parse().unwrap()));
     }
 
     #[test]
