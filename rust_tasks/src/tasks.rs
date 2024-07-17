@@ -21,7 +21,6 @@ pub mod add_utils;
 pub mod display_utils;
 pub mod edit_utils;
 pub mod summary;
-pub mod task;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
@@ -65,12 +64,13 @@ impl Task {
                 let chrono_duration = duration.to_chrono_at_datetime(self.due_utc.unwrap());
                 let new_due_date = self.due_utc.map(|x| x.add(chrono_duration));
                 // FIXME! Temporary fix that assumes all my ready dates happen on the same date as due_utc
-                let new_ready_date = &self.ready_utc.as_ref().map(|x| x.add(chrono_duration));
-                let default_task = Task::default();
-                let mut new_task = self.clone();
-                new_task.ulid = default_task.ulid;
-                new_task.due_utc = new_due_date;
-                new_task.ready_utc.clone_from(new_ready_date);
+                let new_ready_date = self.ready_utc.map(|x| x.add(chrono_duration));
+                let new_task = Task {
+                    ulid: Ulid::new().to_string().to_lowercase(),
+                    due_utc: new_due_date,
+                    ready_utc: new_ready_date,
+                    ..self.clone()
+                };
                 Some(new_task)
             }
         }
@@ -167,16 +167,8 @@ pub fn quick_clean(storage: &dyn TaskStorage, date: &str) -> Result<()> {
     for task in tasks.iter_mut() {
         match &task.recurrence_duration {
             None => {
-                let new_due = task.due_utc.clone().map(|x| {
-                    today.with_time(x.time()).unwrap()
-                    // let date_part = x.split(' ').collect::<Vec<&str>>()[0];
-                    // x.replace(date_part, today_date_str.as_str())
-                });
-                let new_ready = task.ready_utc.clone().map(|x| {
-                    today.with_time(x.time()).unwrap()
-                    // let date_part = x.split(' ').collect::<Vec<&str>>()[0];
-                    // x.replace(date_part, today_date_str.as_str())
-                });
+                let new_due = task.due_utc.map(|x| today.with_time(x.time()).unwrap());
+                let new_ready = task.ready_utc.map(|x| today.with_time(x.time()).unwrap());
                 task.due_utc = new_due;
                 task.ready_utc = new_ready;
                 task.update_to_db(storage)?;
