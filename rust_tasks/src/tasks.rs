@@ -41,7 +41,7 @@ pub struct Task {
 impl Default for Task {
     fn default() -> Self {
         Task {
-            ulid: Ulid::new().to_string(),
+            ulid: Ulid::new().to_string().to_lowercase(),
             body: "".to_string(),
             // compatibility with tlite, temporary
             user: Some("rookie".to_string()),
