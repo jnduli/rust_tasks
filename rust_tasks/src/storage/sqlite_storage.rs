@@ -55,7 +55,7 @@ impl TaskStorage for SQLiteStorage {
             task.ready_utc,
             task.due_utc,
             task.closed_utc,
-            task.recurrence_duration,
+            task.recurrence_duration.map(|x| x.to_string()),
             task.priority_adjustment,
             task.user,
             task.metadata,
@@ -100,7 +100,7 @@ impl TaskStorage for SQLiteStorage {
             task.ready_utc,
             task.due_utc,
             task.closed_utc,
-            task.recurrence_duration,
+            task.recurrence_duration.map(|x| x.to_string()),
             task.priority_adjustment,
             task.user,
             task.metadata,
@@ -126,32 +126,8 @@ impl TaskStorage for SQLiteStorage {
     }
 
     fn search_using_ulid(&self, ulid: &str) -> anyhow::Result<Vec<Task>> {
-        let query = format!("SELECT ulid, body, modified_utc, ready_utc, due_utc, closed_utc, recurrence_duration, priority, user, metadata, tags FROM tasks_view WHERE ulid LIKE '%{}'", ulid);
-        let mut stmt = self.connection.prepare(&query)?;
-
-        let tasks: Vec<Task> = stmt
-            .query_map([], |row| {
-                Ok(Task {
-                    ulid: row.get(0)?,
-                    body: row.get(1)?,
-                    modified_utc: row.get(2)?,
-                    ready_utc: row.get(3)?,
-                    due_utc: row.get(4)?,
-                    closed_utc: row.get(5)?,
-                    recurrence_duration: row.get(6)?,
-                    // filler value to stop weird increments
-                    priority_adjustment: None,
-                    user: row.get(8)?,
-                    metadata: row.get(9)?,
-                    tags: {
-                        let tags: Option<String> = row.get(10)?;
-                        tags.map(|x| x.split(',').map(|x| x.to_string()).collect::<Vec<String>>())
-                    },
-                })
-            })?
-            .map(|x| x.unwrap())
-            .collect();
-        Ok(tasks)
+        let extra_sql_clause = format!("WHERE ulid LIKE '%{}'", ulid);
+        self.get_tasks(Some(&extra_sql_clause))
     }
 
     fn next_tasks(&self, number: usize) -> anyhow::Result<Vec<Task>> {
@@ -221,7 +197,10 @@ impl SQLiteStorage {
                     ready_utc: row.get(3)?,
                     due_utc: row.get(4)?,
                     closed_utc: row.get(5)?,
-                    recurrence_duration: row.get(6)?,
+                    recurrence_duration: {
+                        let recur: Option<String> = row.get(6)?;
+                        recur.map(|x| x.parse().unwrap())
+                    },
                     // filler value to stop weird increments
                     priority_adjustment: None,
                     user: row.get(8)?,

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Local, NaiveDateTime};
+use chrono::Local;
 use std::io::{ErrorKind, Write};
 use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 
@@ -33,17 +33,16 @@ fn show_task_table(
     ulid_len: Option<usize>,
 ) -> Result<()> {
     let ulid = ulid_len.map_or_else(|| &task.ulid[..], |x| &task.ulid[task.ulid.len() - x..]);
-    let due_utc = task.due_utc.clone().unwrap_or("".to_string());
+    let due_utc = task.due_utc.map_or("".to_string(), |x| {
+        x.format("%Y-%m-%d %H:%M:%S").to_string()
+    });
     stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
     write!(stdout, "{:7}", ulid)?;
     stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
     write!(stdout, "{:23}", due_utc)?;
-    let mut body_color = match task.due_utc.clone() {
+    let mut body_color = match task.due_utc.as_ref() {
         None => Color::White,
-        Some(k) => {
-            let due_chrono = NaiveDateTime::parse_from_str(k.as_str(), "%Y-%m-%d %H:%M:%S")
-                .unwrap()
-                .and_utc();
+        Some(&due_chrono) => {
             let now_utc = Local::now().naive_utc().and_utc();
             let difference = (due_chrono - now_utc).num_minutes();
             if difference < 0 {

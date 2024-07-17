@@ -1,8 +1,6 @@
-use std::str::FromStr;
-
 use anyhow::Result;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use iso8601_duration::{Duration, ParseDurationError};
+use iso8601_duration::Duration;
 
 use super::{Task, TaskStorage};
 
@@ -11,40 +9,17 @@ struct AddContext {
     body: String,
     due: Option<DateTime<Utc>>,
     tags: Option<Vec<String>>,
-    recur: Option<Recurrence>,
+    recur: Option<Duration>,
     priority: Option<f64>,
-}
-
-#[derive(PartialEq, Debug)]
-enum Recurrence {
-    ISO8601(Duration),
-    Custom(String),
-}
-
-impl FromStr for Recurrence {
-    type Err = ParseDurationError;
-
-    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
-        if s == "P1JD" {
-            return Ok(Recurrence::Custom(s.to_string()));
-        }
-        let duration: Duration = s.parse()?;
-        Ok(Recurrence::ISO8601(duration))
-    }
 }
 
 pub fn add_task(task_storage: &dyn TaskStorage, input: &str) -> Result<()> {
     let context = get_context(input.to_string())?;
     let task = Task {
         body: context.body,
-        due_utc: context
-            .due
-            .map(|x| x.format("%Y-%m-%d %H:%M:%S").to_string()),
+        due_utc: context.due,
         tags: context.tags,
-        recurrence_duration: context.recur.map(|x| match x {
-            Recurrence::ISO8601(y) => y.to_string(),
-            Recurrence::Custom(y) => y,
-        }),
+        recurrence_duration: context.recur,
         priority_adjustment: context.priority,
         ..Default::default()
     };
