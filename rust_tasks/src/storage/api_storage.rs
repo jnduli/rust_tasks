@@ -73,6 +73,10 @@ impl TaskStorage for APIStorage {
             .into_json()?;
         Ok(res)
     }
+
+    fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> anyhow::Result<()> {
+        todo!()
+    }
 }
 
 impl APIStorage {
