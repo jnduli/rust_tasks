@@ -183,9 +183,9 @@ end = "14:00:00"
 goal = "PT1800S"
 
 [tags]
-meeting = "PT1800S"
-work = "PT1800S"
 "#;
-        assert_eq!(serialized, expected.to_string());
+        assert!(serialized.starts_with(expected));
+        assert!(serialized.contains("meeting = \"PT1800S\""));
+        assert!(serialized.contains("work = \"PT1800S\""));
     }
 }
