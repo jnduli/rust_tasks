@@ -16,6 +16,7 @@ use crate::{
 pub struct Config {
     backend: Backend,
     summary: Option<SummaryConfig>,
+    sync: Option<Vec<Backend>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -30,6 +31,23 @@ struct Backend {
     uri: String,
 }
 
+impl Backend {
+    pub fn get_storage_engine(&self) -> Result<Box<dyn TaskStorage>> {
+        match self.strain {
+            BackendStrains::Api => Ok(Box::new(APIStorage::new(self.uri.clone()))),
+            BackendStrains::SQLite => {
+                let path = self.uri.clone();
+                if !path.starts_with("file://") {
+                    bail!("Expected path to start with file:// but found {path}")
+                }
+                let stripper = "file://".len();
+                let absolute_path = &path[stripper..];
+                Ok(Box::new(SQLiteStorage::new(absolute_path)))
+            }
+        }
+    }
+}
+
 impl Config {
     pub fn load(path: Option<String>) -> Result<Config> {
         let config_file = path.map_or(config_path()?, |x| Path::new(&x).to_path_buf());
@@ -41,18 +59,18 @@ impl Config {
 
     pub fn get_storage_engine(&self) -> Result<Box<dyn TaskStorage>> {
         let backend = &self.backend;
-        match backend.strain {
-            BackendStrains::Api => Ok(Box::new(APIStorage::new(backend.uri.clone()))),
-            BackendStrains::SQLite => {
-                let path = backend.uri.clone();
-                if !path.starts_with("file://") {
-                    bail!("Expected path to start with file:// but found {path}")
-                }
-                let stripper = "file://".len();
-                let absolute_path = &path[stripper..];
-                Ok(Box::new(SQLiteStorage::new(absolute_path)))
-            }
-        }
+        backend.get_storage_engine()
+    }
+
+    pub fn get_sync_engine(&self) -> Result<Vec<Box<dyn TaskStorage>>> {
+        let res = self
+            .sync
+            .clone()
+            .expect("No syncs defined")
+            .iter()
+            .map(|x| x.get_storage_engine().expect("invalid sync type"))
+            .collect();
+        Ok(res)
     }
 
     pub fn get_summary_config(&self) -> SummaryConfig {

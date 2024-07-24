@@ -49,6 +49,11 @@ enum Commands {
     Query { clause: String },
     /// Statistics about how my day is going
     Summary {},
+    /// Sync with other storages
+    Sync {
+        #[arg(default_value_t = 3)]
+        n_days: usize,
+    },
     /// Running tests I'm trying out
     Experiment {},
 }
@@ -92,6 +97,13 @@ fn main() -> anyhow::Result<(), Box<dyn Error>> {
         }
         Some(Commands::QuickClean { date }) => {
             rust_tasks::tasks::quick_clean(task_storage_box.as_ref(), date)?
+        }
+        Some(Commands::Sync { n_days }) => {
+            let syncs = &task_config.get_sync_engine()?;
+            if syncs.len() > 1 {
+                println!("I don't currently support multiple syncs");
+            }
+            task_storage_box.sync(syncs[0].as_ref(), *n_days)?;
         }
         Some(Commands::Experiment {}) => rust_tasks::tasks::experiment()?,
         None => {}
