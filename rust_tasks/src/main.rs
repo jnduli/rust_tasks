@@ -63,7 +63,6 @@ fn main() -> anyhow::Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let task_config = Config::load(args.config)?;
     let task_storage_box = task_config.get_storage_engine()?;
-    // FIXME! add support for summary to taskstorage
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd

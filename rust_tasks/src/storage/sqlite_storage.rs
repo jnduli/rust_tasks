@@ -162,9 +162,8 @@ impl TaskStorage for SQLiteStorage {
     }
 
     fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> anyhow::Result<()> {
-        // FIXME! change this to an actual date and time
         let date = Utc::now().date_naive() - Duration::days(n_days as i64);
-        let extra_clause = format!("WHERE modified_utc > {} OR modified_utc IS NULL", date);
+        let extra_clause = format!("WHERE modified_utc > '{}' OR modified_utc IS NULL", date);
         let self_tasks = self.unsafe_query(&extra_clause)?;
         let other_tasks = task_storage.unsafe_query(&extra_clause)?;
         fn create_hashmap(tasks: Vec<Task>) -> HashMap<String, Task> {
@@ -176,11 +175,16 @@ impl TaskStorage for SQLiteStorage {
         }
         let self_map = create_hashmap(self_tasks);
         let other_map = create_hashmap(other_tasks);
+        let mut added = 0;
+        let mut updated = 0;
         for k in self_map.keys() {
             let self_task = self_map.get(k).unwrap(); // I'm sure this exists
             let other_task = other_map.get(k);
             match other_task {
-                None => task_storage.save(self_task)?,
+                None => {
+                    added += 1;
+                    task_storage.save(self_task)?
+                }
                 Some(other) => {
                     if other != self_task {
                         // FIXME! custom code to ensure all other fields are the same excluding the
@@ -194,6 +198,7 @@ impl TaskStorage for SQLiteStorage {
                             ..self_task.clone()
                         };
                         if self_clean != other_clean {
+                            updated += 1;
                             if other.modified_utc > self_task.modified_utc {
                                 self.update(other)?;
                             } else {
@@ -206,9 +211,14 @@ impl TaskStorage for SQLiteStorage {
         }
         for k in other_map.keys() {
             if !self_map.contains_key(k) {
+                added += 1;
                 self.save(other_map.get(k).unwrap())?;
             }
         }
+        println!(
+            "Successful sync: added {}, updated {} tasks",
+            added, updated
+        );
         Ok(())
     }
 
