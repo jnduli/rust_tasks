@@ -175,14 +175,15 @@ impl TaskStorage for SQLiteStorage {
         }
         let self_map = create_hashmap(self_tasks);
         let other_map = create_hashmap(other_tasks);
-        let mut added = 0;
-        let mut updated = 0;
+        let mut upstream_added = 0;
+        let mut local_updated = 0;
+        let mut upstream_updated = 0;
         for k in self_map.keys() {
             let self_task = self_map.get(k).unwrap(); // I'm sure this exists
             let other_task = other_map.get(k);
             match other_task {
                 None => {
-                    added += 1;
+                    upstream_added += 1;
                     task_storage.save(self_task)?
                 }
                 Some(other) => {
@@ -198,26 +199,29 @@ impl TaskStorage for SQLiteStorage {
                             ..self_task.clone()
                         };
                         if self_clean != other_clean {
-                            updated += 1;
                             if other.modified_utc > self_task.modified_utc {
                                 self.update(other)?;
+                                local_updated += 1;
                             } else {
                                 task_storage.update(self_task)?;
+                                upstream_updated += 1;
                             }
                         }
                     }
                 }
             }
         }
+        let mut local_added = 0;
         for k in other_map.keys() {
             if !self_map.contains_key(k) {
-                added += 1;
+                local_added += 1;
                 self.save(other_map.get(k).unwrap())?;
             }
         }
         println!(
-            "Successful sync: added {}, updated {} tasks",
-            added, updated
+            "Successful sync: \n added {} and updated {} tasks to self\n added and updated {} tasks",
+            local_added, local_updated,
+            upstream_added, upstream_added
         );
         Ok(())
     }
