@@ -49,7 +49,9 @@ enum Commands {
     Query { clause: String },
     /// Statistics about how my day is going
     Summary {},
-    /// Sync with other storages
+    /// Sync with other storages.
+    /// We have a Bug where deleted tasks are recreated. Work around this by marking the tasks as
+    /// done
     Sync {
         #[arg(default_value_t = 3)]
         n_days: usize,

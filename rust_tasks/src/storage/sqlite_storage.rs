@@ -219,9 +219,9 @@ impl TaskStorage for SQLiteStorage {
             }
         }
         println!(
-            "Successful sync: \n added {} and updated {} tasks to self\n added and updated {} tasks",
+            "Successful sync: \n added {} and updated {} tasks to self\n added {} and updated {} tasks",
             local_added, local_updated,
-            upstream_added, upstream_added
+            upstream_added, upstream_updated
         );
         Ok(())
     }
