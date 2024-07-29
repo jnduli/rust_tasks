@@ -41,6 +41,18 @@ goal = "PT30M"
 
 which we use to calculated some stats about how the day is going on.
 
+Sync configuration is optinal and is similar to the `[backend]` config like:
+
+```
+[[sync]] # first sync
+strain = "Api"
+uri = "http://abc.co"
+
+[[sync]] # second sync
+strain = "SQLite"
+uri = "file:///path/to/sync.db"
+```
+
 Run:
 
 ```
