@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::Local;
+use chrono::{Duration, Local, Utc};
 use rusqlite::{params, Connection};
 use ulid::Ulid;
 
@@ -159,6 +159,71 @@ impl TaskStorage for SQLiteStorage {
             done_tasks,
             open_tags_count: Some(open_tags_count),
         })
+    }
+
+    fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> anyhow::Result<()> {
+        let date = Utc::now().date_naive() - Duration::days(n_days as i64);
+        let extra_clause = format!("WHERE modified_utc > '{}' OR modified_utc IS NULL", date);
+        let self_tasks = self.unsafe_query(&extra_clause)?;
+        let other_tasks = task_storage.unsafe_query(&extra_clause)?;
+        fn create_hashmap(tasks: Vec<Task>) -> HashMap<String, Task> {
+            let mut map = HashMap::new();
+            tasks.iter().for_each(|x| {
+                map.insert(x.ulid.to_string(), x.clone());
+            });
+            map
+        }
+        let self_map = create_hashmap(self_tasks);
+        let other_map = create_hashmap(other_tasks);
+        let mut upstream_added = 0;
+        let mut local_updated = 0;
+        let mut upstream_updated = 0;
+        for k in self_map.keys() {
+            let self_task = self_map.get(k).unwrap(); // I'm sure this exists
+            let other_task = other_map.get(k);
+            match other_task {
+                None => {
+                    upstream_added += 1;
+                    task_storage.save(self_task)?
+                }
+                Some(other) => {
+                    if other != self_task {
+                        // FIXME! custom code to ensure all other fields are the same excluding the
+                        // modfied utc
+                        let other_clean = Task {
+                            modified_utc: None,
+                            ..other.clone()
+                        };
+                        let self_clean = Task {
+                            modified_utc: None,
+                            ..self_task.clone()
+                        };
+                        if self_clean != other_clean {
+                            if other.modified_utc > self_task.modified_utc {
+                                self.update(other)?;
+                                local_updated += 1;
+                            } else {
+                                task_storage.update(self_task)?;
+                                upstream_updated += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut local_added = 0;
+        for k in other_map.keys() {
+            if !self_map.contains_key(k) {
+                local_added += 1;
+                self.save(other_map.get(k).unwrap())?;
+            }
+        }
+        println!(
+            "Successful sync: \n added {} and updated {} tasks to self\n added {} and updated {} tasks",
+            local_added, local_updated,
+            upstream_added, upstream_updated
+        );
+        Ok(())
     }
 
     fn unsafe_query(&self, clause: &str) -> anyhow::Result<Vec<Task>> {
@@ -324,5 +389,40 @@ mod tests {
         sqlite_storage.update(expected_task).unwrap();
         let tasks = sqlite_storage.search_using_ulid("6715").unwrap();
         assert_eq!(tasks[0].body, "updated task".to_string());
+    }
+
+    #[test]
+    fn test_sync() {
+        let storage1 = get_sqlite_storage();
+        let storage2 = get_sqlite_storage();
+        let mut tasks = storage1.search_using_ulid("6715").unwrap();
+        let expected_task = &mut tasks[0];
+        expected_task.body = "random updated task".to_string();
+        storage1.update(expected_task).unwrap();
+        let new_task1 = Task::default();
+        storage1.save(&new_task1).unwrap();
+
+        let new_task2 = Task::default();
+        storage2.save(&new_task2).unwrap();
+        let mut tasks = storage2.search_using_ulid("h2td").unwrap();
+        let task2 = &mut tasks[0];
+        task2.body = "random mess".to_string();
+        storage2.update(task2).unwrap();
+
+        storage1.sync(&storage2, 2).unwrap();
+        let tasks = storage2.search_using_ulid("6715").unwrap();
+        assert_eq!(tasks[0].body, "random updated task".to_string());
+        let tasks2 = storage1.search_using_ulid("h2td").unwrap();
+        assert_eq!(tasks2[0].body, "random mess");
+
+        assert_eq!(
+            storage2.search_using_ulid(&new_task1.ulid).unwrap().len(),
+            1
+        );
+
+        assert_eq!(
+            storage1.search_using_ulid(&new_task2.ulid).unwrap().len(),
+            1
+        );
     }
 }
