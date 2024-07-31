@@ -18,7 +18,8 @@ const CREATE_TASKS_TABLE_QUERY: &str = "CREATE TABLE IF NOT EXISTS tasks (
   recurrence_duration text,
   priority_adjustment float,
   user text,
-  metadata text
+  metadata text,
+  soft_deleted INTEGER DEFAULT 0
 );
 ";
 
@@ -78,9 +79,13 @@ impl TaskStorage for SQLiteStorage {
     }
 
     fn delete(&self, task: &Task) -> anyhow::Result<()> {
-        let query = "DELETE FROM tasks WHERE ulid = ?";
+        let query = r#"UPDATE tasks SET 
+            soft_deleted = 1,
+            closed_utc = ?
+            WHERE ulid = ?
+            "#;
         let mut stmt = self.connection.prepare(query)?;
-        stmt.execute(params![task.ulid])?;
+        stmt.execute(params![get_utc_now_db_str(), task.ulid])?;
         let drop_tags_query = "DELETE FROM task_to_tag WHERE task_ulid = ?";
         self.connection
             .prepare(drop_tags_query)?
@@ -126,16 +131,18 @@ impl TaskStorage for SQLiteStorage {
     }
 
     fn search_using_ulid(&self, ulid: &str) -> anyhow::Result<Vec<Task>> {
-        let extra_sql_clause = format!("WHERE ulid LIKE '%{}'", ulid);
+        let extra_sql_clause = format!("WHERE soft_deleted = 0 AND ulid LIKE '%{}'", ulid);
         self.get_tasks(Some(&extra_sql_clause))
     }
 
     fn next_tasks(&self, number: usize) -> anyhow::Result<Vec<Task>> {
         let extra_clause = format!(
             r#"WHERE
+                    soft_deleted = 0 AND (
                     DATE(due_utc) <= DATE('now') AND
                     closed_utc IS NULL AND
                     (ready_utc IS NULL OR DATETIME('now') >= DATETIME(ready_utc))
+                    )
                 ORDER BY due_utc ASC, priority DESC LIMIT {}"#,
             number
         );
@@ -143,8 +150,13 @@ impl TaskStorage for SQLiteStorage {
     }
 
     fn summarize_day(&self, summary: &SummaryConfig) -> anyhow::Result<DaySummaryResult> {
-        let total_tasks = self.count_tasks("(DATE(due_utc) <= DATE('now') AND DATE(closed_utc) IS NULL) OR DATE(closed_utc) = DATE('now')");
-        let done_tasks = self.count_tasks("DATE(closed_utc) = DATE('now')");
+        let total_tasks = self.count_tasks(r#"
+            soft_deleted = 0 AND (
+                (DATE(due_utc) <= DATE('now') AND DATE(closed_utc) IS NULL) OR 
+                DATE(closed_utc) = DATE('now')
+            )
+            "#);
+        let done_tasks = self.count_tasks("soft_deleted = 0 AND DATE(closed_utc) = DATE('now')");
         let mut open_tags_count = HashMap::new();
         for tag in summary.relevant_tags() {
             let count_query = format!(
@@ -164,8 +176,9 @@ impl TaskStorage for SQLiteStorage {
     fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> anyhow::Result<()> {
         let date = Utc::now().date_naive() - Duration::days(n_days as i64);
         let extra_clause = format!("WHERE modified_utc > '{}' OR modified_utc IS NULL", date);
-        let self_tasks = self.unsafe_query(&extra_clause)?;
-        let other_tasks = task_storage.unsafe_query(&extra_clause)?;
+
+        // handling soft deleted tasks
+
         fn create_hashmap(tasks: Vec<Task>) -> HashMap<String, Task> {
             let mut map = HashMap::new();
             tasks.iter().for_each(|x| {
@@ -173,6 +186,15 @@ impl TaskStorage for SQLiteStorage {
             });
             map
         }
+        // let deleted_clause = format!("{} AND soft_deleted = 1", &extra_clause);
+        // let self_deleted_clause = self.unsafe_query(&deleted_clause);
+        // let other_deleted_clause = task_storage.unsafe_query(&deleted_clause);
+
+
+
+
+        let self_tasks = self.unsafe_query(&extra_clause)?;
+        let other_tasks = task_storage.unsafe_query(&extra_clause)?;
         let self_map = create_hashmap(self_tasks);
         let other_map = create_hashmap(other_tasks);
         let mut upstream_added = 0;
@@ -373,11 +395,20 @@ mod tests {
     #[test]
     fn task_deleted() {
         let sqlite_storage = get_sqlite_storage();
+        let count_query = r#"
+            soft_deleted = 0 AND (
+                (DATE(due_utc) <= DATE('now') AND DATE(closed_utc) IS NULL)
+                OR DATE(closed_utc) = DATE('now')
+            )
+        "#;
+        let open_tasks = sqlite_storage.count_tasks(count_query);
         let tasks = sqlite_storage.search_using_ulid("6715").unwrap();
         let expected_task = &tasks[0];
         sqlite_storage.delete(expected_task).unwrap();
         let tasks = sqlite_storage.search_using_ulid("6715").unwrap();
-        assert_eq!(tasks.len(), 0);
+        assert_eq!(tasks.len(), 0); // soft deleted, so it shouldn't exist
+        let new_open_tasks = sqlite_storage.count_tasks(count_query);
+        assert_eq!(open_tasks, new_open_tasks + 1);
     }
 
     #[test]
@@ -395,12 +426,21 @@ mod tests {
     fn test_sync() {
         let storage1 = get_sqlite_storage();
         let storage2 = get_sqlite_storage();
+        let count_query = r#"
+            soft_deleted = 0 AND (
+                (DATE(due_utc) <= DATE('now') AND DATE(closed_utc) IS NULL)
+                OR DATE(closed_utc) = DATE('now')
+            )
+        "#;
+        let original_tasks_count = storage1.count_tasks(count_query);
         let mut tasks = storage1.search_using_ulid("6715").unwrap();
         let expected_task = &mut tasks[0];
         expected_task.body = "random updated task".to_string();
         storage1.update(expected_task).unwrap();
         let new_task1 = Task::default();
         storage1.save(&new_task1).unwrap();
+        let task = storage1.search_using_ulid("3akq").unwrap();
+        storage1.delete(&task[0]);
 
         let new_task2 = Task::default();
         storage2.save(&new_task2).unwrap();
@@ -413,6 +453,7 @@ mod tests {
         let tasks = storage2.search_using_ulid("6715").unwrap();
         assert_eq!(tasks[0].body, "random updated task".to_string());
         let tasks2 = storage1.search_using_ulid("h2td").unwrap();
+
         assert_eq!(tasks2[0].body, "random mess");
 
         assert_eq!(
@@ -424,5 +465,13 @@ mod tests {
             storage1.search_using_ulid(&new_task2.ulid).unwrap().len(),
             1
         );
+
+        // deleted task doesn't exist anymore
+        let task = storage1.search_using_ulid("3akq").unwrap();
+        assert_eq!(task.len(), 0);
+        let task = storage2.search_using_ulid("3akq").unwrap();
+        assert_eq!(task.len(), 0);
+        assert_eq!(storage1.count_tasks(count_query), original_tasks_count-1);
+        assert_eq!(storage2.count_tasks(count_query), original_tasks_count-1);
     }
 }
