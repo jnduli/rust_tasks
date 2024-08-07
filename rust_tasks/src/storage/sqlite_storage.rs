@@ -175,9 +175,7 @@ impl TaskStorage for SQLiteStorage {
 
     fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> anyhow::Result<()> {
         let date = Utc::now().date_naive() - Duration::days(n_days as i64);
-        let extra_clause = format!("WHERE modified_utc > '{}' OR modified_utc IS NULL", date);
-
-        // handling soft deleted tasks
+        let extra_clause = format!("WHERE (modified_utc > '{}' OR modified_utc IS NULL)", date);
 
         fn create_hashmap(tasks: Vec<Task>) -> HashMap<String, Task> {
             let mut map = HashMap::new();
@@ -186,15 +184,24 @@ impl TaskStorage for SQLiteStorage {
             });
             map
         }
-        // let deleted_clause = format!("{} AND soft_deleted = 1", &extra_clause);
-        // let self_deleted_clause = self.unsafe_query(&deleted_clause);
-        // let other_deleted_clause = task_storage.unsafe_query(&deleted_clause);
+        let deleted_clause = format!("{} AND soft_deleted = 1", &extra_clause);
+        let self_deleted = self.unsafe_query(&deleted_clause)?;
+        let other_deleted = task_storage.unsafe_query(&deleted_clause)?;
+        for self_task in self_deleted {
+            if let Err(e) = task_storage.delete(&self_task) {
+                eprintln!("Error for task {}: {}", self_task.ulid, e);
+            }
+        }
 
+        for other_task in other_deleted {
+            if let Err(e) = self.delete(&other_task) {
+                eprintln!("Error for task {}: {}", other_task.ulid, e);
+            }
+        }
 
-
-
-        let self_tasks = self.unsafe_query(&extra_clause)?;
-        let other_tasks = task_storage.unsafe_query(&extra_clause)?;
+        let updated_clause = format!("{} AND soft_deleted = 0", &extra_clause);
+        let self_tasks = self.unsafe_query(&updated_clause)?;
+        let other_tasks = task_storage.unsafe_query(&updated_clause)?;
         let self_map = create_hashmap(self_tasks);
         let other_map = create_hashmap(other_tasks);
         let mut upstream_added = 0;
@@ -206,7 +213,11 @@ impl TaskStorage for SQLiteStorage {
             match other_task {
                 None => {
                     upstream_added += 1;
-                    task_storage.save(self_task)?
+                    if let Err(_e) = task_storage.save(self_task) {
+                        upstream_added -= 1;
+                        upstream_updated += 1;
+                        task_storage.update(self_task)?
+                    }
                 }
                 Some(other) => {
                     if other != self_task {
@@ -233,11 +244,17 @@ impl TaskStorage for SQLiteStorage {
                 }
             }
         }
+
         let mut local_added = 0;
         for k in other_map.keys() {
             if !self_map.contains_key(k) {
                 local_added += 1;
-                self.save(other_map.get(k).unwrap())?;
+                let other_task = other_map.get(k).unwrap();
+                if let Err(e) = self.save(other_task) {
+                    local_added -= 1;
+                    local_updated += 1;
+                    self.update(other_task)?
+                };
             }
         }
         println!(
@@ -321,6 +338,7 @@ fn get_utc_now_db_str() -> String {
         .format("%Y-%m-%d %H:%M:%S")
         .to_string()
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -450,6 +468,8 @@ mod tests {
         storage2.update(task2).unwrap();
 
         storage1.sync(&storage2, 2).unwrap();
+        let mut tasks = storage1.search_using_ulid("6715").unwrap();
+        assert_eq!(tasks[0].body, "random updated task".to_string());
         let tasks = storage2.search_using_ulid("6715").unwrap();
         assert_eq!(tasks[0].body, "random updated task".to_string());
         let tasks2 = storage1.search_using_ulid("h2td").unwrap();
