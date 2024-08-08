@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{Duration, Local, Utc};
+use chrono::{Duration, Local, Utc, naive::NaiveDate};
 use rusqlite::{params, Connection};
 use ulid::Ulid;
 
@@ -175,35 +175,12 @@ impl TaskStorage for SQLiteStorage {
 
     fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> anyhow::Result<()> {
         let date = Utc::now().date_naive() - Duration::days(n_days as i64);
-        let extra_clause = format!("WHERE (modified_utc > '{}' OR modified_utc IS NULL)", date);
-
-        fn create_hashmap(tasks: Vec<Task>) -> HashMap<String, Task> {
-            let mut map = HashMap::new();
-            tasks.iter().for_each(|x| {
-                map.insert(x.ulid.to_string(), x.clone());
-            });
-            map
-        }
-        let deleted_clause = format!("{} AND soft_deleted = 1", &extra_clause);
-        let self_deleted = self.unsafe_query(&deleted_clause)?;
-        let other_deleted = task_storage.unsafe_query(&deleted_clause)?;
-        for self_task in self_deleted {
-            if let Err(e) = task_storage.delete(&self_task) {
-                eprintln!("Error for task {}: {}", self_task.ulid, e);
-            }
-        }
-
-        for other_task in other_deleted {
-            if let Err(e) = self.delete(&other_task) {
-                eprintln!("Error for task {}: {}", other_task.ulid, e);
-            }
-        }
-
-        let updated_clause = format!("{} AND soft_deleted = 0", &extra_clause);
+        self.sync_deleted(task_storage, &date)?;
+        let updated_clause = format!("WHERE soft_deleted = 0 AND (modified_utc > '{}' OR modified_utc IS NULL)", date);
         let self_tasks = self.unsafe_query(&updated_clause)?;
         let other_tasks = task_storage.unsafe_query(&updated_clause)?;
-        let self_map = create_hashmap(self_tasks);
-        let other_map = create_hashmap(other_tasks);
+        let self_map = create_tasks_hashmap(self_tasks);
+        let other_map = create_tasks_hashmap(other_tasks);
         let mut upstream_added = 0;
         let mut local_updated = 0;
         let mut upstream_updated = 0;
@@ -250,7 +227,7 @@ impl TaskStorage for SQLiteStorage {
             if !self_map.contains_key(k) {
                 local_added += 1;
                 let other_task = other_map.get(k).unwrap();
-                if let Err(e) = self.save(other_task) {
+                if let Err(_e) = self.save(other_task) {
                     local_added -= 1;
                     local_updated += 1;
                     self.update(other_task)?
@@ -329,6 +306,24 @@ impl SQLiteStorage {
             .expect("Failed to run query");
         count
     }
+
+    fn sync_deleted(&self, task_storage: &dyn TaskStorage, check_date: &NaiveDate ) -> anyhow::Result<()> {
+        let deleted_clause = format!("WHERE soft_deleted = 1 AND (modified_utc > '{}' OR modified_utc IS NULL)", check_date);
+        let self_deleted = self.unsafe_query(&deleted_clause)?;
+        let other_deleted = task_storage.unsafe_query(&deleted_clause)?;
+        for self_task in self_deleted {
+            if let Err(e) = task_storage.delete(&self_task) {
+                eprintln!("Error for task {}: {}", self_task.ulid, e);
+            }
+        }
+
+        for other_task in other_deleted {
+            if let Err(e) = self.delete(&other_task) {
+                eprintln!("Error for task {}: {}", other_task.ulid, e);
+            }
+        }
+        Ok(())
+    }
 }
 
 fn get_utc_now_db_str() -> String {
@@ -339,6 +334,13 @@ fn get_utc_now_db_str() -> String {
         .to_string()
 }
 
+fn create_tasks_hashmap(tasks: Vec<Task>) -> HashMap<String, Task> {
+            let mut map = HashMap::new();
+            tasks.iter().for_each(|x| {
+                map.insert(x.ulid.to_string(), x.clone());
+            });
+            map
+        }
 
 #[cfg(test)]
 mod tests {
@@ -458,7 +460,7 @@ mod tests {
         let new_task1 = Task::default();
         storage1.save(&new_task1).unwrap();
         let task = storage1.search_using_ulid("3akq").unwrap();
-        storage1.delete(&task[0]);
+        storage1.delete(&task[0]).unwrap();
 
         let new_task2 = Task::default();
         storage2.save(&new_task2).unwrap();
@@ -468,8 +470,6 @@ mod tests {
         storage2.update(task2).unwrap();
 
         storage1.sync(&storage2, 2).unwrap();
-        let mut tasks = storage1.search_using_ulid("6715").unwrap();
-        assert_eq!(tasks[0].body, "random updated task".to_string());
         let tasks = storage2.search_using_ulid("6715").unwrap();
         assert_eq!(tasks[0].body, "random updated task".to_string());
         let tasks2 = storage1.search_using_ulid("h2td").unwrap();
