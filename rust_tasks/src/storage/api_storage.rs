@@ -74,7 +74,7 @@ impl TaskStorage for APIStorage {
         Ok(res)
     }
 
-    fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> anyhow::Result<()> {
+    fn sync(&self, _task_storage: &dyn TaskStorage, _n_days: usize) -> anyhow::Result<()> {
         todo!()
     }
 }

@@ -91,7 +91,7 @@ impl SummaryConfig {
         for (tag, cnt) in summary_result
             .open_tags_count
             .clone()
-            .unwrap_or(HashMap::new())
+            .unwrap_or_default()
             .iter()
         {
             let time_for_tag = self.tags.get(tag).unwrap();
@@ -112,7 +112,7 @@ impl SummaryConfig {
         for (tag, cnt) in summary_result
             .open_tags_count
             .clone()
-            .unwrap_or(HashMap::new())
+            .unwrap_or_default()
             .iter()
         {
             if cnt < &1 {
