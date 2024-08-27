@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,7 @@ pub trait TaskStorage {
     fn next_tasks(&self, count: usize) -> Result<Vec<Task>>;
     fn summarize_day(&self, summary: &SummaryConfig) -> Result<DaySummaryResult>;
     fn sync(&self, task_storage: &dyn TaskStorage, n_days: usize) -> Result<()>;
+    fn deleted_ulids(&self, n_days: &usize) -> Result<HashSet<String>>;
     // FIXME! remove this method
     fn unsafe_query(&self, clause: &str) -> Result<Vec<Task>>;
 }

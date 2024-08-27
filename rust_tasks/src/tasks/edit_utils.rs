@@ -2,7 +2,6 @@ use std::io::Write;
 
 use crate::storage::storage::TaskStorage;
 
-
 use anyhow::Result;
 use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 

@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use ureq::Error;
 
+use std::collections::HashSet;
+
 use crate::tasks::summary::SummaryConfig;
 
 use super::storage::{DaySummaryResult, TaskStorage};
@@ -20,6 +22,12 @@ impl TaskStorage for APIStorage {
     }
 
     fn delete(&self, task: &crate::tasks::Task) -> anyhow::Result<()> {
+        // FIXME: temporary soln that ensures syncs also works with delete and remove APIs
+        let remote_task = self.search_using_ulid(&task.ulid)?;
+        if remote_task.len() == 0 {
+            self.save(task)?;
+        }
+
         let end_point = format!("{}/tasks/{}", self.uri, task.ulid);
         ureq::delete(&end_point)
             .call()
@@ -76,6 +84,15 @@ impl TaskStorage for APIStorage {
 
     fn sync(&self, _task_storage: &dyn TaskStorage, _n_days: usize) -> anyhow::Result<()> {
         todo!()
+    }
+
+    fn deleted_ulids(&self, n_days: &usize) -> anyhow::Result<HashSet<String>> {
+        let end_point = format!("{}/tasks/deleted_ulids/{}", self.uri, n_days);
+        let res = ureq::get(&end_point)
+            .call()
+            .map_err(api_error_report)?
+            .into_json()?;
+        Ok(res)
     }
 }
 

@@ -14,8 +14,8 @@ use axum::{
     routing::{get, patch},
     Json, Router,
 };
-use rust_tasks::{storage::storage::TaskStorage, tasks::summary::SummaryConfig};
 use rust_tasks::{storage::sqlite_storage, tasks::Task};
+use rust_tasks::{storage::storage::TaskStorage, tasks::summary::SummaryConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::signal;
@@ -81,6 +81,7 @@ fn app(shared_state: Arc<Mutex<AppState>>) -> Router {
         .route("/tasks/next/:count", get(get_next_tasks))
         .route("/tasks/unsafe_query/", get(get_unsafe_query_tasks))
         .route("/tasks/summarize_day/", get(get_day_summary))
+        .route("/tasks/deleted_ulids/:n_days", get(get_deleted_ulids))
         .layer((
             TraceLayer::new_for_http(),
             // Graceful shutdown will wait for outstanding requests to complete. Add a timeout so
@@ -248,13 +249,20 @@ async fn get_day_summary(
     let task_storage = state.lock().unwrap();
     let sql_storage = &task_storage.sql_storage;
     let summary_config = match params.get("summary_config") {
-        None => SummaryConfig::default(), 
-        Some(summary_config) => {
-            serde_json::from_str(summary_config)?
-        }
+        None => SummaryConfig::default(),
+        Some(summary_config) => serde_json::from_str(summary_config)?,
     };
     let day_summary = sql_storage.summarize_day(&summary_config)?;
     Ok(Json(json!(day_summary)))
+}
+
+async fn get_deleted_ulids(
+    State(state): State<Arc<Mutex<AppState>>>,
+    Path(n_days): Path<usize>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let task_storage = state.lock().unwrap();
+    let ulids = task_storage.sql_storage.deleted_ulids(&n_days)?;
+    Ok(Json(json!(ulids)))
 }
 
 #[cfg(test)]
@@ -302,5 +310,46 @@ mod tests {
         let body: Value = serde_json::from_slice(&body).unwrap();
         let expected = json!([{"body":"deep dive int","closed_utc":null,"due_utc":"2023-08-06T18:46:41Z","metadata":null,"modified_utc":null,"priority_adjustment":null,"ready_utc":null,"recurrence_duration":null,"tags":null,"ulid":"7nx0","user":null}]);
         assert_eq!(body, expected);
+    }
+
+    #[tokio::test]
+    async fn test_deleted_tasks() {
+        let app = test_app();
+        let delete_resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::DELETE)
+                    .uri("/tasks/8vag")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let resp_body: Value =
+            serde_json::from_slice(&delete_resp.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(resp_body, json!("Successfully deleted"));
+
+        let deleted_ulids_resp = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::GET)
+                    .uri("/tasks/deleted_ulids/1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let resp_body: Value = serde_json::from_slice(
+            &deleted_ulids_resp
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes(),
+        )
+        .unwrap();
+        assert_eq!(resp_body, json!(["8vag"]));
     }
 }
